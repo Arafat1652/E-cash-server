@@ -19,7 +19,7 @@ app.use(express.json())
 // const uri = "mongodb+srv://<db_username>:<db_password>@cluster0.9jgyd7l.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.9jgyd7l.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-console.log(uri);
+// console.log(uri);
 
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -68,9 +68,9 @@ async function run() {
           { projection: { totalSystemBalance: 1 } }
         );
         
-        console.log(systemData ? systemData.totalSystemBalance : "Not found");
+        // console.log(systemData ? systemData.totalSystemBalance : "Not found");
 
-        console.log(users)
+        // console.log(users)
         const totalUserBalance = users.reduce((sum, user) => sum + user.balance, 0);
         const totalBalance = systemData.totalSystemBalance + totalUserBalance
 
@@ -109,7 +109,7 @@ async function run() {
 
     // for regsiter post data
     app.post('/user', async(req, res)=>{
-      const { name, mobile, email, pin, accountType, nid, image } = req.body;
+      const { name, mobile, email, pin, accountType, nid, image, status } = req.body;
 
       try {
         const mobileExist = await userCollection.findOne({mobile : mobile});
@@ -120,7 +120,7 @@ async function run() {
         if (emailExist) return res.status(201).json({ message: `Email already exists` });
     
         // const hashedPin = await bcrypt.hash(pin, 10);
-        const newUser = { name, mobile, email, image, pin, accountType, nid, balance: 40 };
+        const newUser = { name, mobile, email, image, pin, accountType, nid, balance: 40, status };
         
         const result = await userCollection.insertOne(newUser)
         res.send(result)
@@ -133,7 +133,7 @@ async function run() {
     // login
     app.post('/login', async (req, res) => {
       const { mobile, pin } = req.body;
-      console.log("Login request received:", mobile, pin); // Debugging
+      // console.log("Login request received:", mobile, pin); // Debugging
       try {
           // Find user by mobile OR email
           const user = await userCollection.findOne({
@@ -141,13 +141,13 @@ async function run() {
           });
   
           if (!user) {
-            console.log("User not found for mobile:", mobile);
+            // console.log("User not found for mobile:", mobile);
               return res.status(201).json({ success: false, message: "User not found" });
           }
   
           // Check if PIN matches
           if (user.pin !== pin) {
-            console.log("Incorrect PIN for mobile:", mobile);
+            // console.log("Incorrect PIN for mobile:", mobile);
               return res.status(201).json({ success: false, message: "Incorrect PIN" });
           }
 
@@ -180,7 +180,7 @@ async function run() {
   app.post('/send-money', async (req, res) => {
     try {
         const { senderMobile, receiverMobile, amount } = req.body;
-        console.log(req.body);
+        // console.log(req.body);
 
         const sendAmount = parseFloat(amount);
         if (sendAmount < 50) {
@@ -252,7 +252,7 @@ async function run() {
 app.post('/cash-out', async (req, res) => {
   try {
       const { userMobile, agentMobile, amount, pin } = req.body;
-      console.log(req.body);
+      // console.log(req.body);
 
       const cashOutAmount = parseFloat(amount);
       if (cashOutAmount < 50) {
@@ -261,8 +261,8 @@ app.post('/cash-out', async (req, res) => {
 
       const user = await userCollection.findOne({ mobile: userMobile });
       const agent = await userCollection.findOne({ mobile: agentMobile, accountType: "agent" });
-      console.log(user);
-      console.log(agent);
+      // console.log(user);
+      // console.log(agent);
       
 
       if (!user) return res.status(404).json({ message: "User not found!" });
@@ -333,7 +333,7 @@ app.post('/cash-out', async (req, res) => {
 app.post('/cash-in', async (req, res) => {
   try {
       const { userMobile, agentMobile, amount, pin } = req.body;
-      console.log(req.body);
+      // console.log(req.body);
 
       const cashInAmount = parseFloat(amount);
       if (cashInAmount < 50) {
@@ -420,6 +420,98 @@ app.post('/cash-in', async (req, res) => {
     }
 });
 
+
+// manage User
+app.get('/admin/users', async (req, res) => {
+  try {
+      const users = await userCollection.find({}, { projection: { pin: 0 } }).toArray();
+      res.status(200).json(users);
+  } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ message: "Server error" });
+  }
+});
+// 2. Fetch User Transactions on Click
+// When an admin clicks on a user, show their transactions:
+
+
+app.get('/admin/user-transactions/:mobile', async (req, res) => {
+  try {
+      const { mobile } = req.params;
+      const transactions = await transactionCollection.find({
+          $or: [{ from: mobile }, { to: mobile }]
+      }).toArray();
+      console.log('for getting user info',transactions);
+      
+      res.status(200).json(transactions);
+  } catch (error) {
+      console.error("Error fetching user transactions:", error);
+      res.status(500).json({ message: "Server error" });
+  }
+});
+// 3. Search Users by Mobile Number
+// Implement a search API to find users by their phone number:
+
+app.get('/admin/search-user/:mobile', async (req, res) => {
+  try {
+      const { mobile } = req.params;
+      const user = await userCollection.findOne({ mobile: mobile }, { projection: { pin: 0 } });
+
+      if (!user) {
+          return res.status(404).json({ message: "User not found" });
+      }
+
+      res.status(200).json(user);
+  } catch (error) {
+      console.error("Error searching user:", error);
+      res.status(500).json({ message: "Server error" });
+  }
+});
+// 4. Block/Unblock Users
+// Allow the admin to block or unblock a user by updating their status:
+app.patch('/admin/block-user/:mobile', async (req, res) => {
+  try {
+      const { mobile } = req.params;
+      const { isBlocked } = req.body;  // Boolean value
+
+      const updateResult = await userCollection.updateOne(
+          { mobile: mobile },
+          { $set: { isBlocked: isBlocked } }
+      );
+
+      if (updateResult.modifiedCount === 0) {
+          return res.status(404).json({ message: "User not found or no changes made" });
+      }
+
+      res.status(200).json({ message: `User ${isBlocked ? "blocked" : "unblocked"} successfully` });
+  } catch (error) {
+      console.error("Error updating user status:", error);
+      res.status(500).json({ message: "Server error" });
+  }
+});
+
+// get transaction for manage user 
+
+app.get('/transaction/:mobile', async(req, res)=>{
+  try {
+    const mobile = req.params.mobile;
+
+    const transactions = await transactionCollection.find({
+      $or: [{ from: mobile }, { to: mobile }]
+  }).toArray();
+
+    if (!transactions.length) {
+        return res.status(404).json({ message: "No transactions found!" });
+    }
+
+    res.json(transactions);
+} catch (error) {
+    console.error("Error fetching transactions:", error);
+    res.status(500).json({ message: "Internal server error" });
+}
+
+   
+})
 
 
 
